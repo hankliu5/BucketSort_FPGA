@@ -1,9 +1,10 @@
-__kernel void fpgasort(__global const float *x, 
-                        __global const float *y, 
-                        __global float *restrict z)
+__kernel void fpgasort(__global const float *input, 
+                        __global const int *bucket, 
+                        __global float *restrict output)
 {
     // get index of the work item
     int index = get_global_id(0);
+    
 
 }
 
