@@ -21,6 +21,8 @@ using namespace aocl_utils;
 cl_platform_id platform = NULL;
 cl_context context = NULL;
 cl_program program = NULL;
+cl_mem device_input, device_buckets, device_output;
+const int NUM_BUCKET = 10;
 
 #ifdef APPLE
 // OpenCL runtime configuration
@@ -48,19 +50,21 @@ void _checkError(int line,
 #define checkError(status, ...) _checkError(__LINE__, __FILE__, status, __VA_ARGS__)
 #endif
 
-bool init_opencl();
+bool init_opencl(int num_of_elements, float *data);
+double getCurrentTimestamp();
+void cleanup();
 
 int fpga_sort(int num_of_elements, float *data)
 {
-    init_opencl();
-
+    init_opencl(num_of_elements, data);
     return 0;
 }
 
 // Initializes the OpenCL objects.
-bool init_opencl() {
+bool init_opencl(int num_of_elements, float *data) {
   int err;
   cl_int status;
+	int step;
 
   printf("Initializing OpenCL\n");
 #ifdef APPLE
@@ -121,14 +125,13 @@ bool init_opencl() {
     const char *kernel_name = "fpgasort";
     kernel[i] = clCreateKernel(program, kernel_name, &status);
     checkError(status, "Failed to create kernel");
-
   }
 #else
   char *source = 0;
   size_t length = 0;
   LoadTextFromFile("fpgasort.cl", &source, &length);
   const char *kernel_name = "fpgasort";
-  program = clCreateProgramWithSource(context, 1, (const char **) & source, NULL, &err);
+  program = clCreateProgramWithSource(context, 1, (const char **) &source, NULL, &err);
 
   // Build the program that was just created.
   status = clBuildProgram(program, 0, NULL, NULL, NULL, NULL);
@@ -137,7 +140,63 @@ bool init_opencl() {
   queue = clCreateCommandQueue(context, device, CL_QUEUE_PROFILING_ENABLE, &status);
   kernel = clCreateKernel(program, kernel_name, &status);
 #endif
-  return true;
+
+  // Allocate memory to the device.
+	device_input = clCreateBuffer(context, CL_MEM_READ_ONLY,
+		num_of_elements * sizeof(float), NULL, &err);
+	if (err != CL_SUCCESS) {
+		fprintf(stderr, "Error: Failed to create a buffer for inputs!\n");
+		return EXIT_FAILURE;
+	}
+
+	device_buckets = clCreateBuffer(context, CL_MEM_WRITE_ONLY,
+		NUM_BUCKET * sizeof(int), NULL, &err);
+	if (err != CL_SUCCESS) {
+		fprintf(stderr, "Error: Failed to create a buffer for buckets!\n");
+		return EXIT_FAILURE;
+	}
+
+	device_output = clCreateBuffer(context, CL_MEM_WRITE_ONLY,
+		num_of_elements * sizeof(float), NULL, &err);
+	if (err != CL_SUCCESS) {
+		fprintf(stderr, "Error: Failed to create a buffer for outputs!\n");
+		return EXIT_FAILURE;
+	}
+
+	err = clEnqueueWriteBuffer(queue, device_input, CL_FALSE,
+        0, num_of_elements * sizeof(float), data, 0, NULL, NULL);
+  if (err != CL_SUCCESS)
+  {
+    fprintf(stderr, "Failed to transfer buffer for input");
+    exit(1);
+  }
+	clFinish(queue);
+
+	cl_event kernel_event;
+	double start_time = getCurrentTimestamp();
+	unsigned argi = 0;
+
+	status = clSetKernelArg(kernel, argi++, sizeof(cl_mem), &device_input);
+  checkError(status, "Failed to set argument %d", argi - 1);
+
+	status = clSetKernelArg(kernel, argi++, sizeof(cl_mem), &device_buckets);
+  checkError(status, "Failed to set argument %d", argi - 1);
+
+	status = clSetKernelArg(kernel, argi++, sizeof(cl_mem), &device_output);
+  checkError(status, "Failed to set argument %d", argi - 1);
+
+	status = clSetKernelArg(kernel, argi++, sizeof(step), &step);
+  checkError(status, "Failed to set argument %d", argi - 1);
+
+	const size_t global_work_size = num_of_elements;
+	status = clEnqueueNDRangeKernel(queue, kernel, 1, NULL,
+			&global_work_size, NULL, 0, NULL, &kernel_event);
+	checkError(status, "Failed to launch kernel");
+	clFinish(queue);
+	double total_time = getCurrentTimestamp() - start_time;
+	printf("\nFPGA running time: %0.3f ms\n", total_time * 1e3);
+	cleanup();
+	return true;
 }
 
 void cleanup() {
