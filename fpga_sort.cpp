@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <ctime>
 #include <string>
+using namespace std;
 #ifdef APPLE
 #include <OpenCL/opencl.h>
 //#include "scoped_array.h"
@@ -17,6 +18,7 @@
 #include "AOCL_Utils.h"
 using namespace aocl_utils;
 #endif
+
 
 cl_platform_id platform = NULL;
 cl_context context = NULL;
@@ -64,7 +66,15 @@ int fpga_sort(int num_of_elements, float *data)
 bool init_opencl(int num_of_elements, float *data) {
   int err;
   cl_int status;
-	int step;
+	float max_num = *max_element(data, data+num_of_elements);
+	printf("max_num: %f\n", max_num);
+	int step = ceil(max_num / num_of_elements);
+	printf("step: %d\n", step);
+	int *buckets = (int*) calloc(NUM_BUCKET, sizeof(int));
+	for (int i = 0; i < num_of_elements; i++) {
+		printf("%f ", data[i]);
+	}
+	printf("\n");
 
   printf("Initializing OpenCL\n");
 #ifdef APPLE
@@ -170,6 +180,14 @@ bool init_opencl(int num_of_elements, float *data) {
     fprintf(stderr, "Failed to transfer buffer for input");
     exit(1);
   }
+
+	err = clEnqueueWriteBuffer(queue, device_buckets, CL_FALSE,
+        0, NUM_BUCKET * sizeof(int), buckets, 0, NULL, NULL);
+  if (err != CL_SUCCESS)
+  {
+    fprintf(stderr, "Failed to transfer buffer for input");
+    exit(1);
+  }
 	clFinish(queue);
 
 	cl_event kernel_event;
@@ -195,7 +213,17 @@ bool init_opencl(int num_of_elements, float *data) {
 	clFinish(queue);
 	double total_time = getCurrentTimestamp() - start_time;
 	printf("\nFPGA running time: %0.3f ms\n", total_time * 1e3);
+	clReleaseEvent(kernel_event);
+	status = clEnqueueReadBuffer(queue, device_buckets, CL_TRUE,
+			0, NUM_BUCKET * sizeof(int), buckets, 0, NULL, NULL);
+	checkError(status, "Failed to read output matrix");
+	clFinish(queue);
+
+  for (int i = 0; i < NUM_BUCKET; i++) {
+		printf("num %d: %d elements\n", i, buckets[i]);
+	}
 	cleanup();
+	free(buckets);
 	return true;
 }
 
