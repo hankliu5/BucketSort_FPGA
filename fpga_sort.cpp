@@ -172,7 +172,8 @@ bool init_opencl(int num_of_elements, float *data) {
 		return EXIT_FAILURE;
 	}
 
-	err = clEnqueueWriteBuffer(queue, device_input, CL_FALSE,
+        for (unsigned i = 0; i < num_devices; ++i) {
+	err = clEnqueueWriteBuffer(queue[i], device_input, CL_FALSE,
         0, num_of_elements * sizeof(float), data, 0, NULL, NULL);
   if (err != CL_SUCCESS)
   {
@@ -180,40 +181,38 @@ bool init_opencl(int num_of_elements, float *data) {
     exit(1);
   }
 
-	err = clEnqueueWriteBuffer(queue, device_output, CL_FALSE,
+	err = clEnqueueWriteBuffer(queue[i], device_output, CL_FALSE,
         0, num_of_elements * sizeof(int), output_buckets, 0, NULL, NULL);
   if (err != CL_SUCCESS)
   {
     fprintf(stderr, "Failed to transfer buffer for input");
     exit(1);
   }
-	clFinish(queue);
+	clFinish(queue[i]);
 
 	cl_event kernel_event;
-	double start_time = getCurrentTimestamp();
 	unsigned argi = 0;
 
-	status = clSetKernelArg(kernel, argi++, sizeof(cl_mem), &device_input);
+	status = clSetKernelArg(kernel[i], argi++, sizeof(cl_mem), &device_input);
   checkError(status, "Failed to set argument %d", argi - 1);
 
-	status = clSetKernelArg(kernel, argi++, sizeof(cl_mem), &device_output);
+	status = clSetKernelArg(kernel[i], argi++, sizeof(cl_mem), &device_output);
   checkError(status, "Failed to set argument %d", argi - 1);
 
-	status = clSetKernelArg(kernel, argi++, sizeof(step), &step);
+	status = clSetKernelArg(kernel[i], argi++, sizeof(step), &step);
   checkError(status, "Failed to set argument %d", argi - 1);
 
 	const size_t global_work_size = num_of_elements;
-	status = clEnqueueNDRangeKernel(queue, kernel, 1, NULL,
+	status = clEnqueueNDRangeKernel(queue[i], kernel[i], 1, NULL,
 			&global_work_size, NULL, 0, NULL, &kernel_event);
 	checkError(status, "Failed to launch kernel");
-	clFinish(queue);
-	double total_time = getCurrentTimestamp() - start_time;
-	printf("\nFPGA running time: %0.3f ms\n", total_time * 1e3);
+	clFinish(queue[i]);
 	clReleaseEvent(kernel_event);
-	status = clEnqueueReadBuffer(queue, device_output, CL_TRUE,
+	status = clEnqueueReadBuffer(queue[i], device_output, CL_TRUE,
 			0, num_of_elements * sizeof(int), output_buckets, 0, NULL, NULL);
 	checkError(status, "Failed to read output matrix");
-	clFinish(queue);
+	clFinish(queue[i]);
+}
 	// int *buckets = (int*) calloc(NUM_BUCKETS, sizeof(int));
 	// for (int i = 0; i < num_of_elements; i++) {
 	// 	buckets[output_buckets[i]]++;
