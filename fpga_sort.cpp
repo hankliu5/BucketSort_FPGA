@@ -9,6 +9,9 @@
 #include <sys/stat.h>
 #include <ctime>
 #include <string>
+#include <vector>
+#include <iterator>
+#include <algorithm>
 using namespace std;
 #ifdef APPLE
 #include <OpenCL/opencl.h>
@@ -23,8 +26,8 @@ using namespace aocl_utils;
 cl_platform_id platform = NULL;
 cl_context context = NULL;
 cl_program program = NULL;
-cl_mem device_input, device_buckets, device_output;
-const int NUM_BUCKET = 10;
+cl_mem device_input, device_output;
+const int NUM_BUCKETS = 6;
 
 #ifdef APPLE
 // OpenCL runtime configuration
@@ -70,10 +73,13 @@ bool init_opencl(int num_of_elements, float *data) {
 	printf("max_num: %f\n", max_num);
 	int step = ceil(max_num / num_of_elements);
 	printf("step: %d\n", step);
-	int *buckets = (int*) calloc(NUM_BUCKET, sizeof(int));
-	for (int i = 0; i < num_of_elements; i++) {
-		printf("%f ", data[i]);
-	}
+	int *output_buckets = (int*) calloc(num_of_elements, sizeof(int));
+	// float *output = (float*) calloc(num_of_elements, sizeof(int));
+	vector<float> buckets[NUM_BUCKETS];
+
+	// for (int i = 0; i < num_of_elements; i++) {
+	// 	printf("%f ", data[i]);
+	// }
 	printf("\n");
 
   printf("Initializing OpenCL\n");
@@ -159,15 +165,8 @@ bool init_opencl(int num_of_elements, float *data) {
 		return EXIT_FAILURE;
 	}
 
-	device_buckets = clCreateBuffer(context, CL_MEM_WRITE_ONLY,
-		NUM_BUCKET * sizeof(int), NULL, &err);
-	if (err != CL_SUCCESS) {
-		fprintf(stderr, "Error: Failed to create a buffer for buckets!\n");
-		return EXIT_FAILURE;
-	}
-
 	device_output = clCreateBuffer(context, CL_MEM_WRITE_ONLY,
-		num_of_elements * sizeof(float), NULL, &err);
+		num_of_elements * sizeof(int), NULL, &err);
 	if (err != CL_SUCCESS) {
 		fprintf(stderr, "Error: Failed to create a buffer for outputs!\n");
 		return EXIT_FAILURE;
@@ -181,8 +180,8 @@ bool init_opencl(int num_of_elements, float *data) {
     exit(1);
   }
 
-	err = clEnqueueWriteBuffer(queue, device_buckets, CL_FALSE,
-        0, NUM_BUCKET * sizeof(int), buckets, 0, NULL, NULL);
+	err = clEnqueueWriteBuffer(queue, device_output, CL_FALSE,
+        0, num_of_elements * sizeof(int), output_buckets, 0, NULL, NULL);
   if (err != CL_SUCCESS)
   {
     fprintf(stderr, "Failed to transfer buffer for input");
@@ -195,9 +194,6 @@ bool init_opencl(int num_of_elements, float *data) {
 	unsigned argi = 0;
 
 	status = clSetKernelArg(kernel, argi++, sizeof(cl_mem), &device_input);
-  checkError(status, "Failed to set argument %d", argi - 1);
-
-	status = clSetKernelArg(kernel, argi++, sizeof(cl_mem), &device_buckets);
   checkError(status, "Failed to set argument %d", argi - 1);
 
 	status = clSetKernelArg(kernel, argi++, sizeof(cl_mem), &device_output);
@@ -214,16 +210,48 @@ bool init_opencl(int num_of_elements, float *data) {
 	double total_time = getCurrentTimestamp() - start_time;
 	printf("\nFPGA running time: %0.3f ms\n", total_time * 1e3);
 	clReleaseEvent(kernel_event);
-	status = clEnqueueReadBuffer(queue, device_buckets, CL_TRUE,
-			0, NUM_BUCKET * sizeof(int), buckets, 0, NULL, NULL);
+	status = clEnqueueReadBuffer(queue, device_output, CL_TRUE,
+			0, num_of_elements * sizeof(int), output_buckets, 0, NULL, NULL);
 	checkError(status, "Failed to read output matrix");
 	clFinish(queue);
+	// int *buckets = (int*) calloc(NUM_BUCKETS, sizeof(int));
+	// for (int i = 0; i < num_of_elements; i++) {
+	// 	buckets[output_buckets[i]]++;
+	// }
+	// for (int i = 0; i < num_of_elements; i++) {
+	// 	int bucket_id = output_buckets[i];
+	// 	int id = --buckets[bucket_id];
+	// 	output[id] = data[i];
+	// }
+	// for (int i = 0; i < NUM_BUCKETS - 1; i++) {
+	// 	sort(output+buckets[i], output+buckets[i+1]);
+	// }
+	// sort(output+buckets[NUM_BUCKETS-1], output+num_of_elements);
+	// memcpy(data, output, num_of_elements * sizeof(float));
 
-  for (int i = 0; i < NUM_BUCKET; i++) {
-		printf("num %d: %d elements\n", i, buckets[i]);
+
+  // for (int i = 0; i < num_of_elements; i++) {
+	// 	printf("num %d: index %d\n", i, output_buckets[i]);
+	// }
+	for (int i = 0; i < num_of_elements; i++) {
+    buckets[output_buckets[i]].push_back(data[i]);
+  }
+	for (int i = 0; i < NUM_BUCKETS; i++) {
+		sort(buckets[i].begin(), buckets[i].end());
 	}
+	int index = 0;
+  for (int i = 0; i < NUM_BUCKETS; i++)
+  {
+      for (vector<float>::iterator it = buckets[i].begin(); it != buckets[i].end(); it++)
+      {
+          data[index] = *it;
+          index++;
+      }
+  }
+	// free(buckets);
+	free(output_buckets);
+	// free(output);
 	cleanup();
-	free(buckets);
 	return true;
 }
 
