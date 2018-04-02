@@ -45,7 +45,7 @@ all :
 #	$(CROSS-COMPILE)g++ $(SRCS_FILES) $(COMMON_FILES) $(CXX_FLAGS) -c   $(AOCL_COMPILE_CONFIG) $(AOCL_LINK_CONFIG)
 #	$(CROSS-COMPILE)g++ $(CXX_FLAGS) $(OBJS) -o $(TARGET)  $(AOCL_COMPILE_CONFIG) $(AOCL_LINK_CONFIG)
 
-fpgasort.aocx: 
+fpgasort.aocx: fpgasort.cl
 	aoc fpgasort.cl -o fpgasort.aocx --board de1soc_sharedonly
 
 # Standard make targets
